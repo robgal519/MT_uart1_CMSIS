@@ -25,7 +25,9 @@
 /* USER CODE BEGIN Includes */
 #include "Driver_USART.h"
 #include "stdio.h"
+#include "stm32f4xx_hal_rcc.h"
 #include "string.h"
+#include <stdint.h>
 #include <stdlib.h> // random
 /* USER CODE END Includes */
 
@@ -51,12 +53,24 @@ extern ARM_DRIVER_USART Driver_USART1;
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+static uint8_t log_buffer[10000];
+static uint8_t* log_buffer_head = log_buffer;
+
+
+
+void log_message(char* ch){
+    while(*ch)
+        ITM_SendChar(*ch++);
+}
+
 void initUSART(ARM_USART_SignalEvent_t f, unsigned int baudrate, ARM_DRIVER_USART *uart)
 {
   uart->Initialize(f);
@@ -81,7 +95,7 @@ void initGPIOA()
 
   HAL_GPIO_Init(GPIOA, &outputPins);
 }
-static uint8_t dummy[1000];
+static uint8_t dummy[500];
 void randomizeData(uint8_t *buffor, size_t size)
 {
   for (size_t i = 0; i < size; i++)
@@ -96,6 +110,7 @@ uint32_t eventLog[200];
 uint32_t eventLogHead = 0;
 void UART_eventHandler(uint32_t event)
 {
+  // log_buffer_head += sprintf(log_buffer_head, "%lu,",event);
  // eventLog[eventLogHead++] = event;
   if (event & ARM_USART_EVENT_SEND_COMPLETE)
     UART1_transfer_Complete = true;
@@ -144,9 +159,14 @@ void printResult(size_t *results, size_t size, ARM_DRIVER_USART *uart)
 }
 
 static size_t baudrates[] = {
-    4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600};
+        4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
+    1312500,
+    2625000,
+    5250000,
+    // 10500000 not possible with oversampling
+    };
 #define TEST_COUNT (sizeof(baudrates) / sizeof(*baudrates))
-#define RETRY 3
+#define RETRY 5
 void TEST_CMSIS()
 {
   static ARM_DRIVER_USART *uart = &Driver_USART1;
@@ -158,9 +178,17 @@ void TEST_CMSIS()
     for (size_t retry = 0; retry < RETRY; retry++)
     {
       results[test * RETRY + retry] = testBaudrate(baudrates[test], uart);
+      char buff[128];
+      sprintf(buff,"%d,%d\n", baudrates[test],results[test*RETRY+retry]);
+      log_message(buff);
+      // log_message(log_buffer);
+      // log_message("\n");
+      // memset(log_buffer,0,5000);
+      // log_buffer_head = log_buffer;
     }
   }
-  printResult(results, TEST_COUNT * RETRY, uart);
+  
+  //printResult(results, TEST_COUNT * RETRY, uart);
 }
 /* USER CODE END 0 */
 
@@ -192,6 +220,7 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
+  MX_GPIO_Init();
   /* USER CODE BEGIN 2 */
   TEST_CMSIS();
   /* USER CODE END 2 */
@@ -222,26 +251,46 @@ void SystemClock_Config(void)
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
   /** Initializes the CPU, AHB and APB busses clocks 
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 168;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
   }
   /** Initializes the CPU, AHB and APB busses clocks 
   */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
 }
 
 /* USER CODE BEGIN 4 */
@@ -260,7 +309,7 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef USE_FULL_ASSERT
+#ifdef  USE_FULL_ASSERT
 /**
   * @brief  Reports the name of the source file and the source line number
   *         where the assert_param error has occurred.
@@ -269,7 +318,7 @@ void Error_Handler(void)
   * @retval None
   */
 void assert_failed(uint8_t *file, uint32_t line)
-{
+{ 
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
      tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
