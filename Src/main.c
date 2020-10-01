@@ -1,34 +1,40 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; Copyright (c) 2020 STMicroelectronics.
-  * All rights reserved.</center></h2>
-  *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * <h2><center>&copy; Copyright (c) 2020 STMicroelectronics.
+ * All rights reserved.</center></h2>
+ *
+ * This software component is licensed by ST under BSD 3-Clause license,
+ * the "License"; You may not use this file except in compliance with the
+ * License. You may obtain a copy of the License at:
+ *                        opensource.org/licenses/BSD-3-Clause
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
+#include "calibration.h"
+#include "uart_test.h"
+
+#include <stdbool.h>
+#include <stdlib.h> // random
+#include <stdint.h>
+#include "stdio.h"
+
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "Driver_USART.h"
-#include "stdio.h"
+
 #include "stm32f4xx_hal_rcc.h"
 #include "string.h"
-#include <stdint.h>
-#include <stdlib.h> // random
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,7 +54,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-extern ARM_DRIVER_USART Driver_USART1;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -61,31 +67,102 @@ static void MX_GPIO_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-static uint8_t log_buffer[10000];
-static uint8_t* log_buffer_head = log_buffer;
 
+extern volatile bool uart1_transfer_complete;
 
-
-void log_message(char* ch){
-    while(*ch)
-        ITM_SendChar(*ch++);
+void log_message(char *ch) {
+  while (*ch)
+    ITM_SendChar(*ch++);
 }
 
-void initUSART(ARM_USART_SignalEvent_t f, unsigned int baudrate, ARM_DRIVER_USART *uart)
-{
-  uart->Initialize(f);
-  uart->PowerControl(ARM_POWER_FULL);
-  uart->Control(ARM_USART_MODE_ASYNCHRONOUS |
-                    ARM_USART_DATA_BITS_8 |
-                    ARM_USART_PARITY_NONE |
-                    ARM_USART_STOP_BITS_1 |
-                    ARM_USART_FLOW_CONTROL_NONE,
-                baudrate);
-  uart->Control(ARM_USART_CONTROL_TX, 1);
-  uart->Control(ARM_USART_CONTROL_RX, 1);
+
+void randomize_payload(uint8_t *buffor, size_t size) {
+  for (size_t i = 0; i < size; i++) {
+    buffor[i] = rand() % ((uint8_t)(-1));
+  }
 }
-void initGPIOA()
-{
+
+struct test_ctx {
+  void (*configure)(uint32_t baudrate);
+  int32_t (*transfer)(const void *data, uint32_t size);
+  uint32_t (*deinit)(void);
+};
+
+
+struct test_ctx calibration = {
+    .configure = configure_timer,
+    .transfer = start_timer,
+    .deinit = diable_timer,
+};
+
+struct test_ctx test = {
+    .configure = init_usart1,
+    .transfer = test_send,
+    .deinit = test_uninitialize,
+};
+
+bool test_performance(struct test_ctx *ctx, uint32_t baud, uint32_t *counter) {
+
+  static uint8_t data[500];
+  uint32_t cnt = 0;
+
+  if (ctx == NULL)
+    return false;
+
+  if (ctx->configure == NULL)
+    return false;
+  ctx->configure(baud);
+
+  randomize_payload(data, sizeof(data));
+
+  if (ctx->transfer == NULL)
+    return false;
+
+  uart1_transfer_complete = false;
+
+  ctx->transfer(data, sizeof(data));
+  GPIOA->ODR |= 1 << 4;
+  while (!uart1_transfer_complete) {
+    cnt++;
+  }
+  GPIOA->ODR &= (uint32_t) ~(1 << 4);
+
+  if (ctx->deinit == NULL)
+    return false;
+  ctx->deinit();
+
+  *counter = cnt;
+  return true;
+}
+
+static uint32_t baudrates[] = {
+    4800,   9600,   19200,  38400,   57600,   115200,
+    230400, 460800, 921600, 1312500, 2625000, 5250000,
+    // 10500000 not possible with oversampling
+};
+#define TEST_COUNT (sizeof(baudrates) / sizeof(*baudrates))
+#define REPS 3
+
+void TEST_CMSIS() {
+  char log_buffer[128];
+  uint32_t calibration_counter;
+  test_performance(&calibration, 0, &calibration_counter);
+  sprintf(log_buffer, "Calibration: %lu\n", calibration_counter);
+  log_message(log_buffer);
+
+  for (uint32_t boudrate_id = 0; boudrate_id < TEST_COUNT; boudrate_id++) {
+    for (uint8_t retry = 0; retry < REPS; retry++) {
+      uint32_t counter = 0;
+      test_performance(&test, baudrates[boudrate_id], &counter);
+      sprintf(log_buffer, "%lu,%lu\n", baudrates[boudrate_id], counter);
+      log_message(log_buffer);
+    }
+  }
+}
+/* USER CODE END 0 */
+
+
+void initGPIOA() {
   static GPIO_InitTypeDef outputPins;
   outputPins.Pin = GPIO_PIN_4;
   outputPins.Mode = GPIO_MODE_OUTPUT_PP;
@@ -95,116 +172,20 @@ void initGPIOA()
 
   HAL_GPIO_Init(GPIOA, &outputPins);
 }
-static uint8_t dummy[500];
-void randomizeData(uint8_t *buffor, size_t size)
-{
-  for (size_t i = 0; i < size; i++)
-  {
-    buffor[i] = rand() % ((uint8_t)(-1));
-  }
-}
-
-volatile bool UART1_transfer_Complete = false;
-
-uint32_t eventLog[200];
-uint32_t eventLogHead = 0;
-void UART_eventHandler(uint32_t event)
-{
-  // log_buffer_head += sprintf(log_buffer_head, "%lu,",event);
- // eventLog[eventLogHead++] = event;
-  if (event & ARM_USART_EVENT_SEND_COMPLETE)
-    UART1_transfer_Complete = true;
-  // if(event&ARM_USART_EVENT_TX_UNDERFLOW)
-  //   UART1_transfer_Complete = true;
-}
-size_t testBaudrate(size_t baudrate, ARM_DRIVER_USART *uart)
-{
-
-  volatile static size_t counter = 0;
-
-  initUSART(UART_eventHandler, baudrate, uart);
-  counter = 0;
-  UART1_transfer_Complete = false;
-  randomizeData(dummy, sizeof(dummy));
-  int32_t Status = uart->Send(dummy, sizeof(dummy));
-  if (Status != ARM_DRIVER_OK)
-  {
-    // error occured!!
-  }
-  else
-  {
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
-    while (!UART1_transfer_Complete)
-    {
-      counter++;
-    }
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
-  }
-  uart->Uninitialize();
-  return counter;
-}
-void printResult(size_t *results, size_t size, ARM_DRIVER_USART *uart)
-{
-  initUSART(NULL, 9600, uart);
-  for (size_t d = 0; d < size; d++)
-  {
-    static char message[10];
-    sprintf(message, "%d|", results[d]);
-    uart->Send(message, strlen(message));
-    while (uart->GetStatus().tx_busy)
-    {
-      ;
-    }
-  }
-}
-
-static size_t baudrates[] = {
-        4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600,
-    1312500,
-    2625000,
-    5250000,
-    // 10500000 not possible with oversampling
-    };
-#define TEST_COUNT (sizeof(baudrates) / sizeof(*baudrates))
-#define RETRY 5
-void TEST_CMSIS()
-{
-  static ARM_DRIVER_USART *uart = &Driver_USART1;
-
-  static size_t results[TEST_COUNT * RETRY] = {0};
-
-  for (size_t test = 0; test < TEST_COUNT; test++)
-  {
-    for (size_t retry = 0; retry < RETRY; retry++)
-    {
-      results[test * RETRY + retry] = testBaudrate(baudrates[test], uart);
-      char buff[128];
-      sprintf(buff,"%d,%d\n", baudrates[test],results[test*RETRY+retry]);
-      log_message(buff);
-      // log_message(log_buffer);
-      // log_message("\n");
-      // memset(log_buffer,0,5000);
-      // log_buffer_head = log_buffer;
-    }
-  }
-  
-  //printResult(results, TEST_COUNT * RETRY, uart);
-}
-/* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
   /* USER CODE BEGIN 1 */
 
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick.
+   */
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -227,8 +208,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+  while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -237,20 +217,19 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-  /** Configure the main internal regulator output voltage 
-  */
+  /** Configure the main internal regulator output voltage
+   */
   __HAL_RCC_PWR_CLK_ENABLE();
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-  /** Initializes the CPU, AHB and APB busses clocks 
-  */
+  /** Initializes the CPU, AHB and APB busses clocks
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -259,38 +238,34 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 4;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
     Error_Handler();
   }
-  /** Initializes the CPU, AHB and APB busses clocks 
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  /** Initializes the CPU, AHB and APB busses clocks
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK |
+                                RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
-  {
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK) {
     Error_Handler();
   }
 }
 
 /**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_GPIO_Init(void) {
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-
 }
 
 /* USER CODE BEGIN 4 */
@@ -298,30 +273,30 @@ static void MX_GPIO_Init(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
 
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{ 
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
+void assert_failed(uint8_t *file, uint32_t line) {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* User can add his own implementation to report the file name and line
+     number,
+     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line)
+   */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
