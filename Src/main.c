@@ -67,9 +67,6 @@ static void MX_GPIO_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-
-extern volatile bool uart1_transfer_complete;
-
 void log_message(char *ch) {
   while (*ch)
     ITM_SendChar(*ch++);
@@ -82,6 +79,7 @@ void randomize_payload(uint8_t *buffor, size_t size) {
   }
 }
 
+volatile bool UART_TransferComplete;
 struct test_ctx {
   void (*configure)(uint32_t baudrate);
   int32_t (*transfer)(const void *data, uint32_t size);
@@ -118,11 +116,11 @@ bool test_performance(struct test_ctx *ctx, uint32_t baud, uint32_t *counter) {
   if (ctx->transfer == NULL)
     return false;
 
-  uart1_transfer_complete = false;
+  UART_TransferComplete = false;
 
   ctx->transfer(data, sizeof(data));
   GPIOA->ODR |= 1 << 4;
-  while (!uart1_transfer_complete) {
+  while (!UART_TransferComplete) {
     cnt++;
   }
   GPIOA->ODR &= (uint32_t) ~(1 << 4);

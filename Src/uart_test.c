@@ -8,7 +8,7 @@
 
 extern ARM_DRIVER_USART Driver_USART1;
 
-volatile bool uart1_transfer_complete = false;
+extern volatile bool UART_TransferComplete;
 
 void initUSART(ARM_USART_SignalEvent_t f, unsigned int baudrate,
                ARM_DRIVER_USART *uart) {
@@ -25,7 +25,7 @@ void UART_eventHandler(uint32_t event) {
   // log_buffer_head += sprintf(log_buffer_head, "%lu,",event);
   // eventLog[eventLogHead++] = event;
   if (event & ARM_USART_EVENT_SEND_COMPLETE)
-    uart1_transfer_complete = true;
+    UART_TransferComplete = true;
   // if(event&ARM_USART_EVENT_TX_UNDERFLOW)
   //   UART1_transfer_Complete = true;
 }

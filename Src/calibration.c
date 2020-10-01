@@ -8,7 +8,7 @@
 #include "stm32f4xx_hal.h"
 #include "Driver_USART.h"
 
-extern volatile bool uart1_transfer_complete;
+extern volatile bool UART_TransferComplete;
 void TIM2_IRQHandler(void) {
   // clear interrupt status
   if (TIM2->DIER & 0x01) {
@@ -17,7 +17,7 @@ void TIM2_IRQHandler(void) {
     }
   }
   TIM2->CR1 &= (~((uint16_t)1));
-  uart1_transfer_complete = true;
+  UART_TransferComplete = true;
   NVIC_DisableIRQ(TIM2_IRQn);
 }
 
