@@ -139,7 +139,7 @@ static uint32_t baudrates[] = {
     // 10500000 not possible with oversampling
 };
 #define TEST_COUNT (sizeof(baudrates) / sizeof(*baudrates))
-#define REPS 3
+#define REPS 5
 
 void TEST_CMSIS() {
   char log_buffer[128];
