@@ -1,8 +1,8 @@
-// File: uart_test.c
+// File: usart_test.c
 // Author: Robert Gałat
 // Email: robgal519@gmail.com
 
-#include "uart_test.h"
+#include "usart_test.h"
 
 #include "Driver_USART.h"
 

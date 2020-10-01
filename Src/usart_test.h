@@ -1,4 +1,4 @@
-// File: uart_test.h
+// File: usart_test.h
 // Author: Robert Gałat
 // Email: robgal519@gmail.com
 #include <stdint.h>

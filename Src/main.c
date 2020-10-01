@@ -22,7 +22,7 @@
 #include "main.h"
 
 #include "calibration.h"
-#include "uart_test.h"
+#include "usart_test.h"
 
 #include <stdbool.h>
 #include <stdlib.h> // random

@@ -55,7 +55,7 @@ Drivers/STM32F4xx_HAL_Driver/Src/stm32f4xx_hal_exti.c \
 Src/system_stm32f4xx.c \
 Drivers/CMSIS/Driver/USART_STM32F4xx.c\
 Src/calibration.c \
-Src/uart_test.c
+Src/usart_test.c
 
 # ASM sources
 ASM_SOURCES =  \
