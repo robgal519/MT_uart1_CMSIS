@@ -22,12 +22,8 @@ void initUSART(ARM_USART_SignalEvent_t f, unsigned int baudrate,
   uart->Control(ARM_USART_CONTROL_RX, 1);
 }
 void UART_eventHandler(uint32_t event) {
-  // log_buffer_head += sprintf(log_buffer_head, "%lu,",event);
-  // eventLog[eventLogHead++] = event;
   if (event & ARM_USART_EVENT_SEND_COMPLETE)
     UART_TransferComplete = true;
-  // if(event&ARM_USART_EVENT_TX_UNDERFLOW)
-  //   UART1_transfer_Complete = true;
 }
 void init_usart1(uint32_t baudrate) {
   initUSART(UART_eventHandler, baudrate, &Driver_USART1);
