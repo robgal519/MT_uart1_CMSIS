@@ -81,16 +81,17 @@ void randomize_payload(uint8_t *buffor, size_t size) {
 
 volatile bool UART_TransferComplete;
 struct test_ctx {
-  void (*configure)(uint32_t baudrate);
-  int32_t (*transfer)(const void *data, uint32_t size);
-  uint32_t (*deinit)(void);
+  void *internal;
+  void (*configure)(void **internal, uint32_t baudrate);
+  bool (*transfer)(void *internal, uint8_t *data, uint16_t size);
+  bool (*deinit)(void *internal);
 };
 
 
 struct test_ctx calibration = {
-    .configure = configure_timer,
+    .configure = setup_timer,
     .transfer = start_timer,
-    .deinit = diable_timer,
+    .deinit = deinit_timer,
 };
 
 struct test_ctx test = {
@@ -100,34 +101,30 @@ struct test_ctx test = {
 };
 
 bool test_performance(struct test_ctx *ctx, uint32_t baud, uint32_t *counter) {
-
   static uint8_t data[500];
   uint32_t cnt = 0;
 
   if (ctx == NULL)
     return false;
-
   if (ctx->configure == NULL)
     return false;
-  ctx->configure(baud);
 
-  randomize_payload(data, sizeof(data));
-
-  if (ctx->transfer == NULL)
-    return false;
+  ctx->configure(&ctx->internal, baud);
 
   UART_TransferComplete = false;
+  randomize_payload(data, sizeof(data));
+  if (ctx->transfer(ctx->internal, data, sizeof(data)) != HAL_OK)
+    return false;
 
-  ctx->transfer(data, sizeof(data));
-  GPIOA->ODR |= 1 << 4;
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
   while (!UART_TransferComplete) {
     cnt++;
   }
-  GPIOA->ODR &= (uint32_t) ~(1 << 4);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 
   if (ctx->deinit == NULL)
     return false;
-  ctx->deinit();
+  ctx->deinit(ctx->internal);
 
   *counter = cnt;
   return true;

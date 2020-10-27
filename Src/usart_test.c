@@ -29,12 +29,21 @@ void UART_eventHandler(uint32_t event) {
   // if(event&ARM_USART_EVENT_TX_UNDERFLOW)
   //   UART1_transfer_Complete = true;
 }
-void init_usart1(uint32_t baudrate) {
+void init_usart1(void **internal, uint32_t baudrate) {
   initUSART(UART_eventHandler, baudrate, &Driver_USART1);
+  *internal = (void *)&Driver_USART1;
 }
 
-int32_t test_send(const void *data, uint32_t size) {
-  return Driver_USART1.Send(data, size);
+bool test_send(void *internal, uint8_t *data, uint16_t size) {
+  if (internal != &Driver_USART1)
+    return false;
+  Driver_USART1.Send(data, size);
+  return true;
 }
 
-uint32_t test_uninitialize(void) { return Driver_USART1.Uninitialize(); }
+bool test_uninitialize(void *internal) {
+  if (internal != &Driver_USART1)
+    return false;
+  Driver_USART1.Uninitialize();
+  return true;
+}
