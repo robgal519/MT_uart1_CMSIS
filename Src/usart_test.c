@@ -10,23 +10,20 @@ extern ARM_DRIVER_USART Driver_USART1;
 
 extern volatile bool UART_TransferComplete;
 
-void initUSART(ARM_USART_SignalEvent_t f, unsigned int baudrate,
-               ARM_DRIVER_USART *uart) {
-  uart->Initialize(f);
-  uart->PowerControl(ARM_POWER_FULL);
-  uart->Control(ARM_USART_MODE_ASYNCHRONOUS | ARM_USART_DATA_BITS_8 |
-                    ARM_USART_PARITY_NONE | ARM_USART_STOP_BITS_1 |
-                    ARM_USART_FLOW_CONTROL_NONE,
-                baudrate);
-  uart->Control(ARM_USART_CONTROL_TX, 1);
-  uart->Control(ARM_USART_CONTROL_RX, 1);
-}
 void UART_eventHandler(uint32_t event) {
   if (event & ARM_USART_EVENT_SEND_COMPLETE)
     UART_TransferComplete = true;
 }
+
 void init_usart1(void **internal, uint32_t baudrate) {
-  initUSART(UART_eventHandler, baudrate, &Driver_USART1);
+  Driver_USART1.Initialize(UART_eventHandler);
+  Driver_USART1.PowerControl(ARM_POWER_FULL);
+  Driver_USART1.Control(ARM_USART_MODE_ASYNCHRONOUS | ARM_USART_DATA_BITS_8 |
+                    ARM_USART_PARITY_NONE | ARM_USART_STOP_BITS_1 |
+                    ARM_USART_FLOW_CONTROL_NONE,
+                baudrate);
+  Driver_USART1.Control(ARM_USART_CONTROL_TX, 1);
+  Driver_USART1.Control(ARM_USART_CONTROL_RX, 1);
   *internal = (void *)&Driver_USART1;
 }
 
